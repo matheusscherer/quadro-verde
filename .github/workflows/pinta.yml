@@ -1,8 +1,9 @@
 name: Pinta o dia
 
 on:
+  # 23:50 America/Sao_Paulo (UTC-3). Backup se a automação Grok não pintou.
   schedule:
-    - cron: "20 0 * * *"
+    - cron: "50 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -19,10 +20,24 @@ jobs:
         run: |
           set -eu
           TODAY=$(date +%F)
+
           if grep -q -- "$TODAY" diario.md; then
             echo "ja pintado $TODAY"
             exit 0
           fi
+
+          # Trabalho real tem prioridade. Busca pública (sem PAT):
+          # se já houve commit do autor hoje, não pinta.
+          COUNT=$(curl -sS -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/search/commits?q=author:matheusscherer+committer-date:${TODAY}" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(int(d.get('total_count') or 0))" \
+            || echo 0)
+
+          if [ "${COUNT:-0}" -gt 0 ]; then
+            echo "ja existe commit do autor hoje ($COUNT) — skip"
+            exit 0
+          fi
+
           printf '\n- %s — pintado automaticamente\n' "$TODAY" >> diario.md
           git config user.name "Matheus Scherer"
           git config user.email "contatomatheusscherer@gmail.com"
